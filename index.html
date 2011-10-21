@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>lericson.se</title>
+    <script>
+    var modules = {};
+    </script>
+    <script src="js/utils.js"></script>
+    <script src="js/particles.js"></script>
+    <script src="js/main.js"></script>
+
+    <script>
+    var N_PARTICLES = 100;
+    var G = 9.80665; // m/s^2
+    var MASS_MAX = 20;
+    var POINTER_MASS = 100;
+    var INITIAL_SHOVE = 10;  // m/s^2
+
+    var particles = modules.particles();
+
+    // linear acceleration
+    function simpleSpring(origin, coeff) {
+      var d = this.getDistance(origin)
+      return {x: coeff * d.x,
+              y: coeff * d.y};
+    }
+
+    // inverse square acceleration
+    function simpleGravity(gravity) {
+      var d = this.getDistance(gravity.getPosition()),
+          m = this.mass * gravity.mass;
+
+      // distance
+      var r2 = d.x * d.x + d.y * d.y;
+      var r = Math.sqrt(r2);
+
+      // unit vector
+      var u = {x: d.x / r,
+               y: d.y / r};
+
+      // F_12 = -G((m_1*m_2) / |r_12|) * u_12
+      return {x: G * (m / r2) * (d.x / r),
+              y: G * (m / r2) * (d.y / r)};
+    }
+
+    var utils = modules.utils(),
+        main = modules.main();
+    var on = utils.on,
+        copy = utils.copy,
+        Universe = main.Universe;
+
+    Universe.prototype.spawnParticles = function(n, opts) {
+      var bounds = (opts.bounds !== undefined) ? opts.bounds : this.canvas;
+      var forces = (opts.forces !== undefined) ? opts.forces : [];
+
+      console.log("spawning", n, "particles within", bounds);
+
+      for (var i = 0; i < n; i++) {
+        var x = Math.floor(Math.random() * bounds.width),
+            y = Math.floor(Math.random() * bounds.height);
+            p = new particles.Particle(x, y, 0, -5);
+        p.mass = Math.random() * MASS_MAX;
+        copy(forces, p.forces);
+        this.particles.push(p);
+      }
+    };
+
+    on("load", function() {
+      var el = document.getElementById("c"),
+          u = new Universe(el),
+          gravity = new particles.FixedParticle();
+
+      gravity.mass = 0;
+
+      // wrapper to pass our gravity object
+      function universalGravity() {
+        return simpleGravity.call(this, gravity);
+      }
+
+      function orbitalThruster() {
+        var d = this.getDistance(gravity.getPosition()),
+            v = this.getVelocity(),
+            vL = this.getSpeed(),
+            theta = Math.atan2(-d.y, -d.x);
+
+        // perfect course
+        var perfect = {x: vL * Math.sin(theta),
+                       y: -vL * Math.cos(theta)};
+
+        // adjusting acceleration
+        var adjust = {x: perfect.x - v.x,
+                      y: perfect.y - v.y};
+
+        return {x: 0.1 * adjust.x,
+                y: 0.1 * adjust.y};
+      }
+
+      on.call(el, "mousedown", function(ev) {
+        gravity.move({x: ev.x, y: ev.y});
+        gravity.mass = POINTER_MASS;
+      });
+
+      var vKeys = {37: "left",
+                   38: "up",
+                   39: "right",
+                   40: "down"};
+      on.call(window, "keydown", function(ev) {
+        var key = vKeys[ev.keyCode],
+            handled = true;
+
+        switch (key) {
+          case "right":
+            u.timeCoeff += 1
+            break;
+          case "left":
+            u.timeCoeff -= 1;
+            break;
+          case "up":
+            u.timeCoeff *= 2;
+            break;
+          case "down":
+            u.timeCoeff /= 2;
+            break;
+          default:
+            handled = false;
+        }
+
+        if (handled)
+          ev.stopPropagation();
+      });
+
+      u.spawnParticles(N_PARTICLES, {forces: [universalGravity, orbitalThruster]});
+      u.run();
+
+      // Info thingy
+      setInterval(function() {
+        var sumL = 0,
+            sumM = 0,
+            sumD2 = 0,
+            nP = 0;
+
+        for (var i in u.particles) {
+          var p = u.particles[i],
+              v = p.getVelocity(),
+              l = Math.sqrt(v.x * v.x + v.y * v.y),
+              dist = p.getDistance(gravity.getPosition()),
+              pos = p.getPosition();
+          sumL += l;
+          sumM += p.mass;
+          sumD2 = dist.x * dist.x + dist.y * dist.y;
+          nP++;
+        }
+
+        var info = {"average particle velocity": sumL / nP,
+                    "average particle mass": sumM / nP,
+                    "average distance to gravity center": Math.sqrt(sumD2) / nP,
+                    "average frame rate": 1000 * u.frameCount / (u.absoluteClock() - u.started),
+                    "steps per second":  1000 / u.averageStepTime,
+                    "particle count": nP,
+                    "gravitation source mass": gravity.mass,
+                    "time coefficient": u.timeCoeff,
+                    "frame count": u.frameCount},
+            html = [];
+
+        for (var k in info) {
+          html.push(k + ": " + info[k] + "<br>\n");
+        }
+
+        document.getElementById("info").innerHTML = html.join("");
+      }, 1000);
+    });
+    </script>
+    <style>
+      html, body { width: 100%; height: 100%; padding: 0; border: 0; margin: 0; }
+      #c { border: 1px solid black; }
+      #info { z-index: 1000; position: absolute; top: 4px; left: 4px; background: white; border: 1px solid #ddd; }
+    </style>
+  </head>
+
+  <body>
+    <canvas width="800" height="600" id="c"></canvas>
+    <p id="info"></p>
+  </body>
+</html>
