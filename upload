@@ -1,2 +1,0 @@
-#!/bin/bash
-exec rsync --times --recursive -vze ssh . lericson.se:devel/htdocs/cosmonaut/
